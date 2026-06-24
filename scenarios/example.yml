@@ -1,0 +1,64 @@
+# ═══════════════════════════════════════════════
+# WebPilot — Example Scenario
+# ═══════════════════════════════════════════════
+#
+# Variables:
+#   {{env:VAR}}  → reads from environment, prompts if not set
+#   {{var}}      → defined in the `variables:` block below
+#   {{random_email}} → built-in random generators
+#
+# Run:
+#   npx tsx src/index.ts run -s scenarios/example.yml -u https://mysite.com
+#
+# Relative URLs in goto resolve to {site}/path:
+#   goto: /wp-login.php  →  https://mysite.com/wp-login.php
+#
+# Force click disabled buttons:
+#   - click:
+#       selector: "button:has-text('Save')"
+#       force: true
+#
+# Branching (radio — pick one):
+#   - child:
+#       login: [...]
+#       skip: [...]
+#
+# Branching (checkbox — pick multiple):
+#   - child:
+#       type: checkbox
+#       dropbox: [...]
+#       gdrive: [...]
+#
+# Clear cached variables:
+#   npx tsx src/index.ts run --clear-cache
+
+name: Example with Prompted Variables
+description: "Demonstrates interactive variable prompting"
+
+variables:
+  username: "{{env:MY_USER}}"
+  password: "{{env:MY_PASS}}"
+
+steps:
+  - goto:
+      url: /wp-login.php
+
+  - fill:
+      selector: "#user_login"
+      value: "{{username}}"
+
+  - fill:
+      selector: "#user_pass"
+      value: "{{password}}"
+
+  - click:
+      selector: "#wp-submit"
+
+  - wait:
+      selector: "#wpadminbar"
+
+  - screenshot:
+      name: dashboard
+
+  - assert_visible:
+      selector: "#wpadminbar"
