@@ -34,12 +34,14 @@ export interface ScenarioStep {
     headers?: Record<string, string>;
     body?: unknown;
     save_as?: string;
+    save_to?: string;
   };
   db_query?: {
     engine: "sqlite" | "postgres" | "mysql";
     connection: string;
     query: string;
     save_as?: string;
+    save_to?: string;  // save result to JSON file
   };
   // Assertions
   assert?: { selector: string; timeout?: number };

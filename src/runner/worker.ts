@@ -714,6 +714,13 @@ async function runAction(
       if (params.save_as) {
         runtimeVars.set(params.save_as as string, data);
       }
+      if (params.save_to) {
+        const filename = params.save_to as string;
+        const path = join(collector.screenshotDir, filename.endsWith(".json") ? filename : `${filename}.json`);
+        const { writeFileSync: wfs2, mkdirSync: mds2 } = await import("fs");
+        mds2(collector.screenshotDir, { recursive: true });
+        wfs2(path, JSON.stringify(data, null, 2));
+      }
       break;
     }
 
@@ -738,6 +745,13 @@ async function runAction(
 
         if (params.save_as) {
           runtimeVars.set(params.save_as as string, result);
+        }
+        if (params.save_to) {
+          const filename = params.save_to as string;
+          const path = join(collector.screenshotDir, filename.endsWith(".json") ? filename : `${filename}.json`);
+          const { writeFileSync: wfs, mkdirSync: mds } = await import("fs");
+          mds(collector.screenshotDir, { recursive: true });
+          wfs(path, JSON.stringify(result, null, 2));
         }
       } catch (e) {
         throw new Error(`db_query failed: ${(e as Error).message}`);

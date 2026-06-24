@@ -1,0 +1,428 @@
+name: UpdraftPlus Onboarding
+description: "Full wizard — auto-named screenshots"
+env_file: updraft.env
+stop_on_failure: true
+
+variables:
+  db_conn: "mysql://{{DB_USER}}:{{DB_PASS}}@{{DB_HOST}}:{{DB_PORT}}/{{DB_NAME}}"
+
+.select_destination: &select_dest |
+  (async (optionText) => {
+  	const sleep = ms => new Promise(r => setTimeout(r, ms));
+  	const visible = el => {
+  		if (!el) return false;
+  		const r = el.getBoundingClientRect();
+  		const s = getComputedStyle(el);
+  		return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden';
+  	};
+  	const clickElement = el => {
+  		if (!el) throw new Error('Element not found');
+  		const r = el.getBoundingClientRect();
+  		const x = r.left + r.width / 2;
+  		const y = r.top + r.height / 2;
+  		for (const type of ['pointerdown','mousedown','pointerup','mouseup','click']) {
+  			el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+  		}
+  	};
+  	const accordionButton = [...document.querySelectorAll('button')].find(el => visible(el) && el.textContent.includes('Backup destination'));
+  	if (!accordionButton) throw new Error('Accordion not found');
+   	if (accordionButton.getAttribute('aria-expanded') !== 'true') { clickElement(accordionButton); await sleep(500); }
+   	const addBackupBtn = [...document.querySelectorAll('button')].find(el => visible(el) && el.textContent.includes('Add backup'));
+   	if (addBackupBtn) { clickElement(addBackupBtn); await sleep(500); }
+   	const combo = document.querySelector('button[role="combobox"]');
+  	if (!combo) throw new Error('Combobox not found');
+  	if (combo.getAttribute('aria-expanded') !== 'true') { clickElement(combo); for (let i = 0; i < 20; i++) { await sleep(100); if (combo.getAttribute('aria-expanded') === 'true') break; } }
+  	let option = null;
+  	for (let i = 0; i < 30; i++) { option = [...document.querySelectorAll('*')].find(el => visible(el) && el.textContent.trim() === optionText); if (option) break; await sleep(100); }
+  	if (!option) throw new Error('Option not found: ' + optionText);
+  	const target = option.closest('[role="option"]') || option.closest('[data-radix-collection-item]') || option;
+  	clickElement(target);
+  	console.log('Selected:', optionText);
+  })
+
+.click_manual: &click_manual |
+  (async (choice) => {
+  	const btns = document.querySelectorAll('[role="dialog"] button, button');
+  	if (!btns.length) throw new Error('No buttons found');
+  	const manuals = [...btns].filter(b => b.textContent.toLowerCase().includes('manual'));
+  	if (!manuals.length) {
+      console.log('[click_manual] Available buttons:', [...btns].map(b => b.textContent.trim()).join(', '));
+      throw new Error('Manual button not found in dialog');
+    }
+  	let target;
+  	if (choice === undefined || choice === null || choice === '' || choice === 'random') {
+  		target = manuals[Math.floor(Math.random() * manuals.length)];
+  	} else {
+  		const n = parseInt(choice, 10);
+  		target = !isNaN(n) ? manuals[n] : manuals.find(b => b.textContent.trim() === choice);
+  		if (!target) throw new Error('Manual button not matched: ' + choice);
+  	}
+  	target.click();
+  })
+
+.select_option: &select_option |
+  (async (opts) => {
+  	const choice = (opts && typeof opts === 'object') ? opts.choice : opts;
+  	const comboIndex = (opts && typeof opts === 'object') ? opts.comboIndex : undefined;
+  	const sleep = ms => new Promise(r => setTimeout(r, ms));
+  	const allCombos = [...document.querySelectorAll('button[role="combobox"]')];
+  	let combo;
+  	if (comboIndex === undefined || comboIndex === null) {
+  		combo = allCombos.find(el => el.textContent.includes('Select an option'));
+  	} else {
+  		const n = parseInt(comboIndex, 10);
+  		combo = !isNaN(n) ? allCombos[n] : allCombos.find(el => el.textContent.includes(comboIndex));
+  	}
+  	if (!combo) {
+  		console.log('[select_option] no combobox found, searching options directly');
+  	} else if (combo.getAttribute('aria-expanded') !== 'true') {
+  		combo.click();
+  		for (let i = 0; i < 20; i++) {
+  			if (combo.getAttribute('aria-expanded') === 'true') break;
+  			await sleep(100);
+  		}
+  	}
+  	let options = [];
+  	for (let i = 0; i < 30; i++) {
+  		options = [...document.querySelectorAll('[role="option"]')];
+  		if (options.length) break;
+  		await sleep(100);
+  	}
+  	if (!options.length) throw new Error('No options found');
+  	let target;
+  	if (choice === undefined || choice === null || choice === '' || choice === 'random') {
+  		target = options[Math.floor(Math.random() * options.length)];
+  	} else {
+  		const n = parseInt(choice, 10);
+  		target = !isNaN(n) ? options[n] : options.find(o => o.textContent.trim() === choice);
+  		if (!target) throw new Error('Option not matched: ' + choice);
+  	}
+  	target.click();
+  	console.log('[select_option] selected:', target.textContent.trim());
+  })
+
+.google_oauth: &google_oauth |
+  (async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const email = '{{GOOGLE_EMAIL}}';
+    console.log('[gdrive] OAuth start, email:', email);
+    // Click the account if shown
+    for (let i = 0; i < 20; i++) {
+      const el = document.querySelector('[data-email="' + email + '"]');
+      if (el) { console.log('[gdrive] Click account:', email); el.click(); await sleep(2000); break; }
+      await sleep(500);
+    }
+    // Click Continue/Allow/etc through consent screens
+    const targets = ['Continue','Lanjutkan','Allow','Izinkan','Next','Berikutnya','Confirm','Konfirmasi','Grant access','Terima','Setuju'];
+    for (let s = 0; s < 15; s++) {
+      await sleep(1000);
+      const all = document.querySelectorAll('button, [role="button"], input[type="submit"], div[role="button"], span[role="button"]');
+      let found = null;
+      for (const el of all) {
+        const t = (el.textContent || '').trim();
+        if (targets.some(x => t === x || t.startsWith(x))) { found = el; break; }
+      }
+      if (!found) {
+        const names = [...all].map(e => (e.textContent || '').trim().substring(0, 30)).filter(Boolean).join(' | ');
+        console.log('[gdrive] Buttons:', names || '(none)');
+        if (s > 5) { console.log('[gdrive] Done - no more buttons'); break; }
+        continue;
+      }
+      if (found.disabled) { console.log('[gdrive] disabled:', found.textContent.trim()); continue; }
+      console.log('[gdrive] Click:', found.textContent.trim());
+      found.click();
+      await sleep(2500);
+    }
+  })
+
+.check_all_plugins: &check_all_plugins |
+  (async () => {
+  	const boxes = document.querySelectorAll('button[role="checkbox"][id^="plugins_"]');
+  	for (const b of boxes) {
+  		if (b.getAttribute('aria-checked') !== 'true') b.click();
+  	}
+  	console.log('plugins checked:', boxes.length);
+  })
+
+steps:
+  - goto: { url: /?reset_onboarding=1 }
+  - wait: { ms: 1000 }
+  - db_query: { engine: mysql, connection: "{{db_conn}}", query: "DELETE FROM wp_options WHERE option_name = 'updraftplus-addons_options'" }
+  - wait: { ms: 1000 }
+  - goto: { url: /wp-login.php }
+  - screenshot: {}
+  - fill: { selector: "#user_login", value: "{{WP_USER}}" }
+  - fill: { selector: "#user_pass", value: "{{WP_PASS}}" }
+  - click: { selector: "#wp-submit" }
+  - wait: { selector: "#wpadminbar" }
+  - screenshot: {}
+  - goto: { url: "{{?is_multisite ? /wp-admin/network/options-general.php?page=updraftplus : /wp-admin/options-general.php?page=updraftplus}}" }
+  - wait_for_network_idle: { timeout: 8000 }
+  - click: { selector: '[role="dialog"] button:has-text("Start")' }
+  - wait: { ms: 2000 }
+  - child:
+      activate:
+        - "Activate license with credentials"
+        - screenshot: {}
+        - fill: { selector: '[role="dialog"] input#registration_email, [role="dialog"] input[type="email"]', value: "{{UPDRAFT_EMAIL}}" }
+        - fill: { selector: '[role="dialog"] input#registration_password, [role="dialog"] input[type="password"]', value: "{{UPDRAFT_PASS}}" }
+        - click: { selector: '[role="dialog"] button:has-text("Confirm and activate")' }
+        - wait: { ms: 5000 }
+        - click: { selector: '[role="dialog"] button:has-text("Continue")' }
+        - wait: { ms: 2000 }
+      skip:
+        - "Skip license activation"
+        - save_html:
+            label: after-start-dialog
+        - click: { selector: '[role="dialog"] button:has-text("Skip this step"), [role="dialog"] button:has-text("Skip"), [role="dialog"] button:has-text("Not now"), [role="dialog"] button:has-text("Maybe later"), [role="dialog"] button:has-text("I''ll do it later")', force: true }
+        - wait: { ms: 2000 }
+  - screenshot: {}
+  - evaluate:
+      script: *click_manual
+      args:
+        - "random"
+  - wait: { ms: 500 }
+  - evaluate:
+      script: *select_option
+      args:
+        - "random"
+  - wait: { ms: 500 }
+  - fill: { selector: '[role="dialog"] input[type="number"]', value: "{{random:1-10}}" }
+  - wait: { ms: 500 }
+  - screenshot: {}
+  - click: { selector: '[role="dialog"] button:has-text("Save and continue")', force: true }
+  - wait: { ms: 3000 }
+  - screenshot: {}
+  - child:
+      type: checkbox
+      on_empty:
+        - click: { selector: '[role="dialog"] button:has-text("Skip")', force: true }
+        - wait: { ms: 2000 }
+      backblaze:
+        - "Backblaze"
+        - click: { selector: 'button:has-text("Backup destination")', force: true }
+        - wait: { ms: 800 }
+        - evaluate:
+            script: *select_dest
+            args:
+              - "Backblaze"
+        - wait: { ms: 2000 }
+        - click: { selector: 'text="Connect to Backblaze"', force: true }
+        - wait: { ms: 1000 }
+        - fill: { selector: '#backblaze_account_id', value: "{{BACKBLAZE_ACCOUNT_ID}}", force: true }
+        - fill: { selector: '#backblaze_key', value: "{{BACKBLAZE_APP_KEY}}", force: true }
+        - fill: { selector: '#backblaze_single_bucket_key_id', value: "{{BACKBLAZE_BUCKET_KEY_ID}}", force: true }
+        - fill: { selector: '#backblaze_bucket_name', value: "{{BACKBLAZE_BUCKET_NAME}}", force: true }
+        - fill: { selector: '#backblaze_object_lock_duration', value: "0", force: true }
+        - click: { selector: '[role="dialog"] button:has-text("Test connection")' }
+        - wait: { selector: '[role="dialog"]:has-text("Success"), [role="dialog"]:has-text("Failure"), [role="dialog"]:has-text("error")' }
+        - screenshot: {}
+      dreamobjects:
+        - "DreamObjects"
+        - click: { selector: 'button:has-text("Backup destination")', force: true }
+        - wait: { ms: 800 }
+        - evaluate:
+            script: *select_dest
+            args:
+              - "DreamObjects"
+        - wait: { ms: 2000 }
+        - click: { selector: 'text="Connect to DreamObjects"', force: true }
+        - wait: { ms: 1000 }
+        - fill: { selector: '#dreamobjects_accesskey', value: "{{DREAMOBJECTS_ACCESS_KEY}}", force: true }
+        - fill: { selector: '#dreamobjects_secretkey', value: "{{DREAMOBJECTS_SECRET_KEY}}", force: true }
+        - fill: { selector: '#dreamobjects_path', value: "{{DREAMOBJECTS_LOCATION}}", force: true }
+        - evaluate:
+            script: *select_option
+            args:
+              - "{{DREAMOBJECTS_ENDPOINT}}"
+        - click: { selector: '[role="dialog"] button:has-text("Test connection")' }
+        - wait: { selector: '[role="dialog"]:has-text("Success"), [role="dialog"]:has-text("Failure"), [role="dialog"]:has-text("error")' }
+        - screenshot: {}
+      dropbox:
+        - "Dropbox"
+        - click: { selector: 'button:has-text("Backup destination")', force: true }
+        - wait: { ms: 800 }
+        - evaluate:
+            script: *select_dest
+            args:
+              - "Dropbox"
+        - wait: { ms: 2000 }
+        - click: { selector: 'text="Connect to Dropbox"', force: true }
+        - wait: { ms: 1000 }
+        - popup: {}
+        - click: { selector: 'button:has-text("Sign in with Dropbox")', force: true }
+        - popup_wait: {}
+        - wait: { ms: 2000 }
+        - fill: { selector: 'input[type="email"]', value: "{{DROPBOX_EMAIL}}" }
+        - fill: { selector: 'input[type="password"]', value: "{{DROPBOX_PASS}}" }
+        - click: { selector: 'button[type="submit"]', force: true }
+        - wait: { ms: 3000 }
+        - click: { selector: 'button:has-text("Allow")', force: true }
+        - popup_close: {}
+      ftp:
+        - "FTP"
+        - click: { selector: 'button:has-text("Backup destination")', force: true }
+        - wait: { ms: 800 }
+        - evaluate:
+            script: *select_dest
+            args:
+              - "FTP"
+        - wait: { ms: 2000 }
+        - click: { selector: 'text="Connect to FTP"', force: true }
+        - wait: { ms: 1000 }
+        - check: { selector: "#ftp_passive" }
+        - fill: { selector: '#ftp_host', value: "{{FTP_HOST}}", force: true }
+        - fill: { selector: '#ftp_user', value: "{{FTP_USER}}", force: true }
+        - fill: { selector: '#ftp_pass', value: "{{FTP_PASS}}", force: true }
+        - fill: { selector: '#ftp_path', value: "{{FTP_PATH}}", force: true }
+        - click: { selector: '[role="dialog"] button:has-text("Test connection")' }
+        - wait: { selector: '[role="dialog"]:has-text("Success"), [role="dialog"]:has-text("Failure"), [role="dialog"]:has-text("error")' }
+        - screenshot: {}
+      googledrive:
+        - "Google Drive"
+        - click: { selector: 'button:has-text("Backup destination")', force: true }
+        - wait: { ms: 800 }
+        - evaluate:
+            script: *select_dest
+            args:
+              - "Google Drive"
+        - wait: { ms: 2000 }
+        - click: { selector: 'text="Connect to Google Drive"', force: true }
+        - wait: { ms: 2000 }
+        - popup: {}
+        - click: { selector: '[role="dialog"] button:has-text("Sign in with Google Drive")', force: true }
+        - popup_wait: {}
+        # Step 1: Click Google account email
+        - evaluate:
+            script: "(async()=>{const sleep=ms=>new Promise(r=>setTimeout(r,ms));const email='{{GOOGLE_EMAIL}}';for(let i=0;i<20;i++){const el=document.querySelector('[data-email=\"'+email+'\"]');if(el){el.click();break;}await sleep(500);}})()"
+        - wait: { ms: 3000 }
+        # Step 2: Click Continue on consent screen 1
+        - click: { selector: 'button:has-text("Continue"), button:has-text("Lanjutkan")', force: true }
+        - wait: { ms: 3000 }
+        # Step 3: Click Continue on consent screen 2 (if any)
+        - click: { selector: 'button:has-text("Continue"), button:has-text("Lanjutkan"), button:has-text("Allow"), button:has-text("Izinkan")', force: true }
+        - wait: { ms: 5000 }
+        # OAuth redirects to UpdraftPlus — click Complete setup
+        - click: { selector: 'a:has-text("Complete setup"), button:has-text("Complete setup")', force: true }
+        - wait: { ms: 2000 }
+        - click: { selector: 'a:has-text("Close now")', force: true }
+        - popup_close: {}
+        - wait: { ms: 2000 }
+        - wait: { selector: '[role="dialog"]:has-text("Success"), [role="dialog"]:has-text("Failure"), [role="dialog"]:has-text("error")' }
+        - screenshot: {}
+      rackspace:
+        - "Rackspace Cloud Files"
+        - click: { selector: 'button:has-text("Backup destination")', force: true }
+        - wait: { ms: 800 }
+        - evaluate:
+            script: *select_dest
+            args:
+              - "Rackspace Cloud Files"
+        - wait: { ms: 2000 }
+        - click: { selector: 'text="Connect to Rackspace Cloud Files"', force: true }
+        - wait: { ms: 1000 }
+        - fill: { selector: '#cloudfiles_user', value: "{{RACKSPACE_USER}}", force: true }
+        - fill: { selector: '#cloudfiles_apikey', value: "{{RACKSPACE_API_KEY}}", force: true }
+        - fill: { selector: '#cloudfiles_path', value: "{{RACKSPACE_CONTAINER}}", force: true }
+        - evaluate:
+            script: *select_option
+            args:
+              - choice: "{{RACKSPACE_REGION}}"
+                comboIndex: "1"
+        - click: { selector: '[role="dialog"] button:has-text("Test connection")' }
+        - wait: { selector: '[role="dialog"]:has-text("Success"), [role="dialog"]:has-text("Failure"), [role="dialog"]:has-text("error")' }
+        - screenshot: {}
+      s3:
+        - "Amazon S3"
+        - click: { selector: 'button:has-text("Backup destination")', force: true }
+        - wait: { ms: 800 }
+        - evaluate:
+            script: *select_dest
+            args:
+              - "Amazon S3"
+        - wait: { ms: 2000 }
+        - click: { selector: 'text="Connect to Amazon S3"', force: true }
+        - wait: { ms: 1000 }
+        - fill: { selector: '#s3_accesskey', value: "{{S3_ACCESS_KEY}}", force: true }
+        - fill: { selector: '#s3_secretkey', value: "{{S3_SECRET_KEY}}", force: true }
+        - fill: { selector: '#s3_path', value: "{{S3_LOCATION}}", force: true }
+        - evaluate:
+            script: *select_option
+            args:
+              - "{{S3_CLASS}}"
+        - click: { selector: '[role="dialog"] button:has-text("Test connection")' }
+        - wait: { selector: '[role="dialog"]:has-text("Success"), [role="dialog"]:has-text("Failure"), [role="dialog"]:has-text("error")' }
+        - screenshot: {}
+      s3compatible:
+        - "S3-Compatible (Generic)"
+        - click: { selector: 'button:has-text("Backup destination")', force: true }
+        - wait: { ms: 800 }
+        - evaluate:
+            script: *select_dest
+            args:
+              - "S3-Compatible (Generic)"
+        - wait: { ms: 2000 }
+        - click: { selector: 'text="Connect to S3-Compatible (Generic)"', force: true }
+        - wait: { ms: 1000 }
+        - fill: { selector: '#s3generic_accesskey', value: "{{S3GENERIC_ACCESS_KEY}}", force: true }
+        - fill: { selector: '#s3generic_secretkey', value: "{{S3GENERIC_SECRET_KEY}}", force: true }
+        - fill: { selector: '#s3generic_path', value: "{{S3GENERIC_LOCATION}}", force: true }
+        - fill: { selector: '#s3generic_endpoint', value: "{{S3GENERIC_ENDPOINT}}", force: true }
+        - click: { selector: '[role="dialog"] button:has-text("Test connection")' }
+        - wait: { selector: '[role="dialog"]:has-text("Success"), [role="dialog"]:has-text("Failure"), [role="dialog"]:has-text("error")' }
+        - screenshot: {}
+      sftp:
+        - "SFTP / SCP"
+        - click: { selector: 'button:has-text("Backup destination")', force: true }
+        - wait: { ms: 800 }
+        - evaluate:
+            script: *select_dest
+            args:
+              - "SFTP / SCP"
+        - wait: { ms: 2000 }
+        - click: { selector: 'text="Connect to SFTP / SCP"', force: true }
+        - wait: { ms: 1000 }
+        - fill: { selector: '#sftp_host', value: "{{SFTP_HOST}}", force: true }
+        - fill: { selector: '#sftp_port', value: "{{SFTP_PORT}}", force: true }
+        - fill: { selector: '#sftp_user', value: "{{SFTP_USER}}", force: true }
+        - fill: { selector: '#sftp_pass', value: "{{SFTP_PASS}}", force: true }
+        - fill: { selector: '#sftp_path', value: "{{SFTP_PATH}}", force: true }
+        - click: { selector: '[role="dialog"] button:has-text("Test connection")' }
+        - wait: { selector: '[role="dialog"]:has-text("Success"), [role="dialog"]:has-text("Failure"), [role="dialog"]:has-text("error")' }
+        - screenshot: {}
+      webdav:
+        - "WebDAV"
+        - click: { selector: 'button:has-text("Backup destination")', force: true }
+        - wait: { ms: 800 }
+        - evaluate:
+            script: *select_dest
+            args:
+              - "WebDAV"
+        - wait: { ms: 2000 }
+        - click: { selector: 'text="Connect to WebDAV"', force: true }
+        - wait: { ms: 1000 }
+        - fill: { selector: '#webdav_user', value: "{{WEBDAV_USER}}", force: true }
+        - fill: { selector: '#webdav_pass', value: "{{WEBDAV_PASS}}", force: true }
+        - fill: { selector: '#webdav_host', value: "{{WEBDAV_HOST}}", force: true }
+        - fill: { selector: '#webdav_path', value: "{{WEBDAV_PATH}}", force: true }
+        - click: { selector: '[role="dialog"] button:has-text("Test connection")' }
+        - wait: { selector: '[role="dialog"]:has-text("Success"), [role="dialog"]:has-text("Failure"), [role="dialog"]:has-text("error")' }
+        - screenshot: {}
+  - wait: { ms: 1000 }
+  - click: { selector: '[role="dialog"] button:has-text("Save and continue")', force: true }
+  - wait: { ms: 3000 }
+  - screenshot: {}
+  - click: { selector: "#tips_tricks_mailinglist" }
+  - wait: { ms: 300 }
+  - fill: { selector: '[role="dialog"] input[type="email"]', value: "{{NEWSLETTER_EMAIL}}" }
+  - click: { selector: '[role="dialog"] button:has-text("Save and continue")', force: true }
+  - wait: { ms: 5000 }
+  - screenshot: {}
+  - wait: { ms: 1000 }
+  - evaluate:
+      script: *check_all_plugins
+  - click: { selector: '[role="dialog"] button:has-text("Continue")', force: true }
+  - wait: { selector: 'button:has-text("Go to settings")', timeout: 120000 }
+  - click: { selector: 'button:has-text("Go to settings")' }
+  - wait: { ms: 5000 }
+  - screenshot: {}
